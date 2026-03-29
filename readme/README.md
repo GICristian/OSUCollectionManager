@@ -99,7 +99,14 @@ Rezultatul este folderul **`dist\OSC\`**: `OSC.exe` + folderul PyInstaller (`_in
 5. Creezi un tag **identic** cu prefix `v`: `git tag v0.4.2` apoi `git push origin v0.4.2`.
 6. Workflow-ul **Release** (`.github/workflows/release.yml`) rulează pe runner Windows: teste .NET, build PyInstaller + publish self-contained, **Inno Setup** (instalat prin Chocolatey), apoi publică un **GitHub Release** cu un singur fișier: **`OSC_<versiune>_Setup.exe`**. Utilizatorul descarcă setup-ul, îl rulează și urmează asistentul (instalare în `%LocalAppData%\Programs\OSC`, fără admin; shortcut în Meniul Start).
 
-**Utilizatori:** în repo → **Releases** → ultima versiune → descarcă **`OSC_x.y.z_Setup.exe`**. Nu e nevoie de zip sau Python.
+### Unde apare pe GitHub (sidebar **Releases**)
+
+În pagina repo-ului, în dreapta, secțiunea **Releases** (cea cu **Create a new release**) este unde stau versiunile publice. **Setup-ul care „îi face tot”** este fișierul **`OSC_x.y.z_Setup.exe`** atașat la acel release.
+
+- **Automat:** nu e nevoie să apeși „Create a new release” pentru build. După `git push origin v0.4.2` (tag-ul trebuie să coincidă cu `version.py`), workflow-ul **Release** din **Actions** compilează aplicația + installerul Inno și **publică singur** un release în aceeași listă **Releases**, cu **`OSC_<versiune>_Setup.exe`**. Prietenul deschide release-ul, dă download la setup, Next → Next → gata (shortcut, folder instalare, fără Python/.NET manual).
+- **Manual (din site):** poți folosi **Create a new release**, alegi un tag, încarci **`OSC_x.y.z_Setup.exe`** făcut local (`.\build_exe.ps1` apoi `.\build_installer.ps1`), apoi **Publish release**.
+
+**Dacă vezi doar „N tags” și pare gol la Releases:** pe GitHub, tag ≠ release publicat. Fie aștepți / verifici că workflow-ul **Release** a reușit după push la tag, fie creezi tu release-ul din **Create a new release** și atașezi setup-ul.
 
 Dacă tag-ul nu coincide cu `__version__` din `version.py`, workflow-ul eșuează (evită release-uri greșite).
 
