@@ -18,16 +18,40 @@ if (-not (Test-Path -LiteralPath $gh)) {
   Write-Error "Lipsește GitHub CLI. Rulează: winget install --id GitHub.cli -e"
 }
 
-$tmpAuthErr = [System.IO.Path]::GetTempFileName()
-$p = Start-Process -FilePath $gh -ArgumentList @("auth", "status") -Wait -PassThru -NoNewWindow `
-  -RedirectStandardError $tmpAuthErr
-Remove-Item -LiteralPath $tmpAuthErr -Force -ErrorAction SilentlyContinue
-if ($p.ExitCode -ne 0) {
-  Write-Host ""
-  Write-Host "Nu esti logat in gh. Ruleaza in acest terminal, apoi executa din nou acest script:"
-  Write-Host "  gh auth login -h github.com -p https -w"
-  Write-Host ""
-  exit 1
+$ghDataDir = Join-Path $env:APPDATA "GitHub CLI"
+$hasGhConfig = Test-Path -LiteralPath $ghDataDir
+
+$skipAuthStatus = -not [string]::IsNullOrWhiteSpace($env:GH_TOKEN)
+if (-not $skipAuthStatus) {
+  $tmpAuthErr = [System.IO.Path]::GetTempFileName()
+  $p = Start-Process -FilePath $gh -ArgumentList @("auth", "status") -Wait -PassThru -NoNewWindow `
+    -RedirectStandardError $tmpAuthErr
+  Remove-Item -LiteralPath $tmpAuthErr -Force -ErrorAction SilentlyContinue
+  if ($p.ExitCode -ne 0) {
+    Write-Host ""
+    Write-Host "=== GitHub CLI (gh) nu este autentificat pe acest profil Windows ==="
+    Write-Host ""
+    Write-Host "Contul din Cursor / site github.com NU este acelasi lucru cu 'gh'."
+    Write-Host "Trebuie sa rulezi O DATA login-ul pentru CLI, in acelasi tip de terminal unde vei rula acest script."
+    Write-Host ""
+    Write-Host "Folosesc gh de la:"
+    Write-Host "  $gh"
+    Write-Host ""
+    if (-not $hasGhConfig) {
+      Write-Host "(Lipseste folderul $ghDataDir — inca nu s-a terminat niciun 'gh auth login' aici.)"
+      Write-Host ""
+    }
+    Write-Host "Copiaza si ruleaza (se deschide browserul; alege GitHub.com, HTTPS, Yes la Git Credential):"
+    Write-Host ""
+    Write-Host "  & `"$gh`" auth login -h github.com -p https -w"
+    Write-Host ""
+    Write-Host "Verificare:"
+    Write-Host "  & `"$gh`" auth status"
+    Write-Host ""
+    Write-Host "Alternativa: seteaza variabila de mediu GH_TOKEN (PAT cu scope repo) si ruleaza din nou scriptul."
+    Write-Host ""
+    exit 1
+  }
 }
 
 $tmpUser = [System.IO.Path]::GetTempFileName()

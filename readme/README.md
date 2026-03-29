@@ -93,7 +93,7 @@ Rezultatul este folderul **`dist\OSC\`**: `OSC.exe` + folderul PyInstaller (`_in
    gh auth login -h github.com -p https -w
    .\create_and_push_github.ps1
    ```
-   `gh auth login` deschide browserul o dată. Scriptul **`create_and_push_github.ps1`** creează repo-ul public **`OSUCollectionManager`** pe contul cu care ești logat (dacă nu există), setează `origin` la **HTTPS** și face **`git push -u origin main`**.
+   `gh auth login` deschide browserul o dată. **Contul conectat în Cursor sau pe github.com nu înlocuiește acest pas** — CLI-ul `gh` își salvează token-ul separat (folder `%AppData%\GitHub CLI`). După login, verifică: `gh auth status`. Scriptul **`create_and_push_github.ps1`** creează repo-ul public **`OSUCollectionManager`** (dacă lipsește), setează `origin` la **HTTPS** și face **`git push -u origin main`**. Poți folosi și variabila de mediu **`GH_TOKEN`** (PAT cu drept `repo`) în loc de `gh auth login`.
 2. **Manual:** poți crea pe GitHub un repo gol **`OSUCollectionManager`**, apoi `git remote add` / `git push` ca înainte. Link așteptat: [github.com/GICristian/OSUCollectionManager](https://github.com/GICristian/OSUCollectionManager).
 3. În **Settings → Actions → General** al repo-ului, lasă **Workflow permissions** pe „Read and write” (ca release-ul să poată publica fișiere).
 4. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.4.2"`).
