@@ -87,12 +87,13 @@ Rezultatul este folderul **`dist\OSC\`**: `OSC.exe` + folderul PyInstaller (`_in
 
 ### GitHub: release doar cu descărcare
 
-1. **Prima dată — cont și remote (doar tu, din browser / Git Credential Manager):** pe GitHub creezi un repo nou **gol** (fără README generat, ca să nu ai conflict). În folderul proiectului:
+1. **Prima dată — repo gol pe GitHub:** dacă nu există încă, creezi **New repository** cu numele **`OSUCollectionManager`** sub contul **`GICristian`**, **fără** README / .gitignore / licență generate (repo gol). Repo-ul public: [github.com/GICristian/OSUCollectionManager](https://github.com/GICristian/OSUCollectionManager). În acest proiect, `origin` este deja setat la `git@github.com:GICristian/OSUCollectionManager.git`. **Primul push** rulează din **PowerShell sau Terminal integrat Cursor pe mașina ta** (unde merge SSH), nu din medii fără cheie:
    ```powershell
-   git remote add origin https://github.com/<USER>/<REPO>.git
+   cd d:\Work\OSC
+   ssh -T git@github.com
    git push -u origin main
    ```
-   La `git push`, Windows îți cere autentificare: fie te loghezi în browser (recomandat), fie folosești un [Personal Access Token](https://github.com/settings/tokens) în loc de parolă. Nu poți trimite codul din Cursor fără acest pas o singură dată pe mașină.
+   Dacă `ssh -T` reușește dar `git push` zice *Repository not found*, repo-ul nu e creat sau numele contului/repo-ului diferă — corectează pe GitHub sau `git remote set-url origin git@github.com:USER/REPO.git`. Pentru HTTPS în loc de SSH: `git remote set-url origin https://github.com/GICristian/OSUCollectionManager.git` și autentificare cu browser / [PAT](https://github.com/settings/tokens).
 2. În **Settings → Actions → General** al repo-ului, lasă **Workflow permissions** pe „Read and write” (ca release-ul să poată publica fișiere).
 3. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.4.2"`).
 4. Creezi un tag **identic** cu prefix `v`: `git tag v0.4.2` apoi `git push origin v0.4.2`.
