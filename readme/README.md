@@ -87,17 +87,18 @@ Rezultatul este folderul **`dist\OSC\`**: `OSC.exe` + folderul PyInstaller (`_in
 
 ### GitHub: release doar cu descărcare
 
-1. **Prima dată — repo gol pe GitHub:** dacă nu există încă, creezi **New repository** cu numele **`OSUCollectionManager`** sub contul **`GICristian`**, **fără** README / .gitignore / licență generate (repo gol). Repo-ul public: [github.com/GICristian/OSUCollectionManager](https://github.com/GICristian/OSUCollectionManager). În acest proiect, `origin` este deja setat la `git@github.com:GICristian/OSUCollectionManager.git`. **Primul push** rulează din **PowerShell sau Terminal integrat Cursor pe mașina ta** (unde merge SSH), nu din medii fără cheie:
+1. **Prima dată — repo + push automat (recomandat):** instalezi [GitHub CLI](https://cli.github.com/) dacă lipsește (`winget install --id GitHub.cli -e`). În PowerShell din folderul proiectului:
    ```powershell
    cd d:\Work\OSC
-   ssh -T git@github.com
-   git push -u origin main
+   gh auth login -h github.com -p https -w
+   .\create_and_push_github.ps1
    ```
-   Dacă `ssh -T` reușește dar `git push` zice *Repository not found*, repo-ul nu e creat sau numele contului/repo-ului diferă — corectează pe GitHub sau `git remote set-url origin git@github.com:USER/REPO.git`. Pentru HTTPS în loc de SSH: `git remote set-url origin https://github.com/GICristian/OSUCollectionManager.git` și autentificare cu browser / [PAT](https://github.com/settings/tokens).
-2. În **Settings → Actions → General** al repo-ului, lasă **Workflow permissions** pe „Read and write” (ca release-ul să poată publica fișiere).
-3. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.4.2"`).
-4. Creezi un tag **identic** cu prefix `v`: `git tag v0.4.2` apoi `git push origin v0.4.2`.
-5. Workflow-ul **Release** (`.github/workflows/release.yml`) rulează pe runner Windows: teste .NET, build PyInstaller + publish self-contained, arhivează și publică un **GitHub Release** cu fișierul **`OSC_<versiune>_portable.zip`**. Utilizatorii descarcă zip-ul, îl dezarhivează, deschid folderul `OSC` și rulează `OSC.exe`.
+   `gh auth login` deschide browserul o dată. Scriptul **`create_and_push_github.ps1`** creează repo-ul public **`OSUCollectionManager`** pe contul cu care ești logat (dacă nu există), setează `origin` la **HTTPS** și face **`git push -u origin main`**.
+2. **Manual:** poți crea pe GitHub un repo gol **`OSUCollectionManager`**, apoi `git remote add` / `git push` ca înainte. Link așteptat: [github.com/GICristian/OSUCollectionManager](https://github.com/GICristian/OSUCollectionManager).
+3. În **Settings → Actions → General** al repo-ului, lasă **Workflow permissions** pe „Read and write” (ca release-ul să poată publica fișiere).
+4. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.4.2"`).
+5. Creezi un tag **identic** cu prefix `v`: `git tag v0.4.2` apoi `git push origin v0.4.2`.
+6. Workflow-ul **Release** (`.github/workflows/release.yml`) rulează pe runner Windows: teste .NET, build PyInstaller + publish self-contained, arhivează și publică un **GitHub Release** cu fișierul **`OSC_<versiune>_portable.zip`**. Utilizatorii descarcă zip-ul, îl dezarhivează, deschid folderul `OSC` și rulează `OSC.exe`.
 
 Dacă tag-ul nu coincide cu `__version__` din `version.py`, workflow-ul eșuează (evită release-uri greșite).
 
