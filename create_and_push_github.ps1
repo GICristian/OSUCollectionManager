@@ -1,7 +1,6 @@
 # Creează repo-ul OSUCollectionManager pe GitHub (dacă lipsește) și face push pe main.
-# O singură dată, înainte: deschide PowerShell și rulează:
-#   gh auth login -h github.com -p https -w
-# (se deschide browserul; acceptă permisiunile GitHub CLI.)
+# O data, inainte: gh auth login -h github.com -p https -w
+# (ASCII-only strings: evita erori de parsare in Windows PowerShell 5.1)
 
 $ErrorActionPreference = "Stop"
 $root = $PSScriptRoot
@@ -15,7 +14,7 @@ if (-not $gh -or -not (Test-Path -LiteralPath $gh)) {
   $gh = "C:\Program Files\GitHub CLI\gh.exe"
 }
 if (-not (Test-Path -LiteralPath $gh)) {
-  Write-Error "Lipsește GitHub CLI. Rulează: winget install --id GitHub.cli -e"
+  Write-Error "Lipseste GitHub CLI. Ruleaza: winget install --id GitHub.cli -e"
 }
 
 $ghDataDir = Join-Path $env:APPDATA "GitHub CLI"
@@ -31,24 +30,24 @@ if (-not $skipAuthStatus) {
     Write-Host ""
     Write-Host "=== GitHub CLI (gh) nu este autentificat pe acest profil Windows ==="
     Write-Host ""
-    Write-Host "Contul din Cursor / site github.com NU este acelasi lucru cu 'gh'."
-    Write-Host "Trebuie sa rulezi O DATA login-ul pentru CLI, in acelasi tip de terminal unde vei rula acest script."
+    Write-Host "Contul din Cursor / github.com NU este acelasi lucru cu gh CLI."
+    Write-Host "Ruleaza login-ul pentru gh in acelasi terminal unde rulezi acest script."
     Write-Host ""
     Write-Host "Folosesc gh de la:"
     Write-Host "  $gh"
     Write-Host ""
     if (-not $hasGhConfig) {
-      Write-Host "(Lipseste folderul $ghDataDir — inca nu s-a terminat niciun 'gh auth login' aici.)"
+      Write-Host "Lipseste folderul: $ghDataDir"
+      Write-Host "(inca nu s-a terminat niciun gh auth login aici.)"
       Write-Host ""
     }
-    Write-Host "Copiaza si ruleaza (se deschide browserul; alege GitHub.com, HTTPS, Yes la Git Credential):"
-    Write-Host ""
-    Write-Host "  & `"$gh`" auth login -h github.com -p https -w"
+    Write-Host "Ruleaza (se deschide browserul):"
+    Write-Host ('  & "' + $gh + '" auth login -h github.com -p https -w')
     Write-Host ""
     Write-Host "Verificare:"
-    Write-Host "  & `"$gh`" auth status"
+    Write-Host ('  & "' + $gh + '" auth status')
     Write-Host ""
-    Write-Host "Alternativa: seteaza variabila de mediu GH_TOKEN (PAT cu scope repo) si ruleaza din nou scriptul."
+    Write-Host "Alternativa: variabila de mediu GH_TOKEN (PAT cu scope repo)."
     Write-Host ""
     exit 1
   }
@@ -77,11 +76,17 @@ $pView = Start-Process -FilePath $gh -ArgumentList @("repo", "view", $full) `
 Remove-Item -LiteralPath $tmpViewErr -Force -ErrorAction SilentlyContinue
 if ($pView.ExitCode -ne 0) {
   Write-Host "Creez repo public $full ..."
-  $desc = "OSC: osu!Collector collections manager (lazer + stable)"
-  $pCreate = Start-Process -FilePath $gh `
-    -ArgumentList @("repo", "create", $repo, "--public", "-d", $desc) `
-    -Wait -NoNewWindow -PassThru
-  if ($pCreate.ExitCode -ne 0) {
+  # Start-Process -ArgumentList poate sparge gresit flag-urile pentru gh; folosim apel direct.
+  $desc = "OSC osu Collector manager (lazer and stable)"
+  $prevEap = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  $createOut = & $gh @("repo", "create", $repo, "--public", "--description", $desc) 2>&1
+  $createOk = $?
+  $ErrorActionPreference = $prevEap
+  if ($null -ne $createOut) {
+    $createOut | ForEach-Object { Write-Host $_ }
+  }
+  if (-not $createOk) {
     Write-Error "gh repo create a esuat."
   }
 } else {
@@ -94,10 +99,10 @@ git remote add origin $url
 Write-Host "Push origin main -> $url"
 git push -u origin main
 if ($LASTEXITCODE -ne 0) {
-  Write-Error "git push a eșuat."
+  Write-Error "git push a esuat."
 }
 
 Write-Host ""
 Write-Host "Gata: https://github.com/$full"
-Write-Host "GitHub: Settings / Actions / General - Workflow permissions: Read and write (release zip)."
+Write-Host "GitHub: Settings / Actions / General - Workflow permissions Read and write (release zip)."
 Write-Host ""
