@@ -1,11 +1,12 @@
-; Inno Setup 6 — installer Windows (opțional). Instalare per-utilizator, fără admin.
-; 1) Rulează .\build_exe.ps1
-; 2) Deschide acest fișier în Inno Setup Compiler și actualizează #define MyAppVersion
-;    la același număr ca în osc_collector/version.py, apoi Build → Compile.
-; Ieșire: installer\Output\OSC_<versiune>_Setup.exe — poți atașa manual la GitHub Release.
+; Inno Setup 6 — installer Windows (fără admin, per-utilizator).
+; Local: rulezi .\build_exe.ps1, apoi ISCC cu /DMyAppVersion=x.y.z sau fără (fallback mai jos).
+; CI: .github/workflows/release.yml compilează cu /DMyAppVersion=<tag>.
+; Ieșire: installer\Output\OSC_<versiune>_Setup.exe
 
-#define MyAppName "OSC"
+#ifndef MyAppVersion
 #define MyAppVersion "0.4.2"
+#endif
+#define MyAppName "OSC"
 #define MyAppPublisher "OSC"
 #define MyAppExeName "OSC.exe"
 

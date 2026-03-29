@@ -79,9 +79,8 @@ Rezultatul este folderul **`dist\OSC\`**: `OSC.exe` + folderul PyInstaller (`_in
 
 ### Ce trimiți unui prieten (fără Python, fără .NET pe PC-ul lui)
 
-1. Rulezi `.\build_exe.ps1` pe mașina ta de build.
-2. Arhivezi **întreg** folderul `dist\OSC` (ex. zip). Poți folosi `.\package_osc_release.ps1` — creează `OSC_<versiune>_portable.zip` cu folderul `OSC` în interior.
-3. Prietenul extrage zip-ul, intră în folderul `OSC`, dublu-clic pe **`OSC.exe`**. Setările aplicației merg în `%AppData%\OSC\` (nu în folderul exe).
+- **Recomandat:** dacă publici pe GitHub, trimite link la **Releases**; prietenul descarcă **`OSC_x.y.z_Setup.exe`**, instalează din asistent, pornește OSC din Meniul Start (sau desktop, dacă a bifat).
+- **Portabil (zip):** rulezi `.\build_exe.ps1`, apoi `.\package_osc_release.ps1` — zip cu folderul `OSC`; extrage tot și dublu-clic pe **`OSC.exe`**. Setările merg în `%AppData%\OSC\` (nu lângă exe).
 
 **Cerințe pe PC destinatar:** Windows 10/11 **64-bit**. Dimensiunea arhivei e mai mare decât la publish „framework-dependent”, pentru că include runtime-ul .NET al utilitarului Realm.
 
@@ -98,17 +97,21 @@ Rezultatul este folderul **`dist\OSC\`**: `OSC.exe` + folderul PyInstaller (`_in
 3. În **Settings → Actions → General** al repo-ului, lasă **Workflow permissions** pe „Read and write” (ca release-ul să poată publica fișiere).
 4. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.4.2"`).
 5. Creezi un tag **identic** cu prefix `v`: `git tag v0.4.2` apoi `git push origin v0.4.2`.
-6. Workflow-ul **Release** (`.github/workflows/release.yml`) rulează pe runner Windows: teste .NET, build PyInstaller + publish self-contained, arhivează și publică un **GitHub Release** cu fișierul **`OSC_<versiune>_portable.zip`**. Utilizatorii descarcă zip-ul, îl dezarhivează, deschid folderul `OSC` și rulează `OSC.exe`.
+6. Workflow-ul **Release** (`.github/workflows/release.yml`) rulează pe runner Windows: teste .NET, build PyInstaller + publish self-contained, **Inno Setup** (instalat prin Chocolatey), apoi publică un **GitHub Release** cu un singur fișier: **`OSC_<versiune>_Setup.exe`**. Utilizatorul descarcă setup-ul, îl rulează și urmează asistentul (instalare în `%LocalAppData%\Programs\OSC`, fără admin; shortcut în Meniul Start).
+
+**Utilizatori:** în repo → **Releases** → ultima versiune → descarcă **`OSC_x.y.z_Setup.exe`**. Nu e nevoie de zip sau Python.
 
 Dacă tag-ul nu coincide cu `__version__` din `version.py`, workflow-ul eșuează (evită release-uri greșite).
 
-### Installer opțional (Inno Setup)
+### Installer local (Inno Setup)
 
-Dacă vrei un **setup .exe** clasic (shortcut în Meniul Start, folder sub `%LocalAppData%\Programs\OSC`):
+După `.\build_exe.ps1`, cu [Inno Setup 6](https://jrsoftware.org/isdl.php) instalat:
 
-1. Instalezi [Inno Setup](https://jrsoftware.org/isdl.php).
-2. Rulezi `.\build_exe.ps1`, apoi deschizi `installer\OSC_Setup.iss` în Inno și aliniezi `#define MyAppVersion` cu `version.py`.
-3. Compilezi; rezultatul e `installer\Output\OSC_<versiune>_Setup.exe`. Poți atașa manual acest fișier la același GitHub Release lângă zip (Actions nu îl generează automat).
+```powershell
+.\build_installer.ps1
+```
+
+Rezultat: `installer\Output\OSC_<versiune>_Setup.exe`. Versiunea se ia din `version.py` sau `.\build_installer.ps1 -Version 0.4.3`. Poți edita și `installer\OSC_Setup.iss` în Inno Compiler (`/DMyAppVersion=...` pe linia de comandă suprascrie fallback-ul din script).
 
 **Cum verifici că exe-ul e cel nou:** în bara de titlu trebuie să vezi versiunea din `osc_collector/version.py` și **`build YYYY-MM-DD HH:MM:SS`** (stamp generat de `build_exe.ps1`). În `OSC.spec`, intrarea PyInstaller este `osc_collector/__main__.py`.
 

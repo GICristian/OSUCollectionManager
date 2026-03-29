@@ -1,5 +1,5 @@
-# La push pe tag v*.*.*: build Windows, zip portabil, GitHub Release cu atașament.
-# version.py trebuie să coincidă cu tag-ul (ex. tag v0.4.2 ↔ __version__ = "0.4.2").
+# Push tag v*.*.*: build Windows, installer Inno Setup, GitHub Release cu un singur .exe (Setup).
+# version.py = tag (ex. v0.4.2 <-> __version__ = "0.4.2").
 
 name: Release
 
@@ -57,15 +57,40 @@ jobs:
         shell: pwsh
         run: .\build_exe.ps1
 
-      - name: Portable zip
+      - name: Install Inno Setup 6
         shell: pwsh
-        run: .\package_osc_release.ps1 -ZipVersion $env:VER
+        run: |
+          choco install innosetup -y --no-progress
+          $candidates = @(
+            "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe",
+            "${env:ProgramFiles}\Inno Setup 6\ISCC.exe"
+          )
+          $iscc = $candidates | Where-Object { Test-Path -LiteralPath $_ } | Select-Object -First 1
+          if (-not $iscc) {
+            Write-Error "ISCC.exe not found after choco install innosetup"
+            exit 1
+          }
+          "ISCC=$iscc" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Compile Windows installer
+        shell: pwsh
+        run: |
+          $iscc = $env:ISCC
+          New-Item -ItemType Directory -Path "installer\Output" -Force | Out-Null
+          & $iscc /DMyAppVersion=$env:VER /Q "installer\OSC_Setup.iss"
+          $setup = "installer\Output\OSC_${env:VER}_Setup.exe"
+          if (-not (Test-Path -LiteralPath $setup)) {
+            Write-Error "Missing $setup"
+            exit 1
+          }
+          (Get-Item $setup).Length
+          Copy-Item -LiteralPath $setup -Destination "OSC_${env:VER}_Setup.exe"
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           name: OSC ${{ github.ref_name }}
-          files: OSC_${{ env.VER }}_portable.zip
+          files: OSC_${{ env.VER }}_Setup.exe
           generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
