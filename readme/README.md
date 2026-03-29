@@ -87,10 +87,16 @@ Rezultatul este folderul **`dist\OSC\`**: `OSC.exe` + folderul PyInstaller (`_in
 
 ### GitHub: release doar cu descărcare
 
-1. Creezi un repo pe GitHub și împingi codul (`git init`, `git remote add origin …`, `git push -u origin main`).
-2. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.4.2"`).
-3. Creezi un tag **identic** cu prefix `v`: `git tag v0.4.2` apoi `git push origin v0.4.2`.
-4. Workflow-ul **Release** (`.github/workflows/release.yml`) rulează pe runner Windows: teste .NET, build PyInstaller + publish self-contained, arhivează și publică un **GitHub Release** cu fișierul **`OSC_<versiune>_portable.zip`**. Utilizatorii descarcă zip-ul, îl dezarhivează, deschid folderul `OSC` și rulează `OSC.exe`.
+1. **Prima dată — cont și remote (doar tu, din browser / Git Credential Manager):** pe GitHub creezi un repo nou **gol** (fără README generat, ca să nu ai conflict). În folderul proiectului:
+   ```powershell
+   git remote add origin https://github.com/<USER>/<REPO>.git
+   git push -u origin main
+   ```
+   La `git push`, Windows îți cere autentificare: fie te loghezi în browser (recomandat), fie folosești un [Personal Access Token](https://github.com/settings/tokens) în loc de parolă. Nu poți trimite codul din Cursor fără acest pas o singură dată pe mașină.
+2. În **Settings → Actions → General** al repo-ului, lasă **Workflow permissions** pe „Read and write” (ca release-ul să poată publica fișiere).
+3. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.4.2"`).
+4. Creezi un tag **identic** cu prefix `v`: `git tag v0.4.2` apoi `git push origin v0.4.2`.
+5. Workflow-ul **Release** (`.github/workflows/release.yml`) rulează pe runner Windows: teste .NET, build PyInstaller + publish self-contained, arhivează și publică un **GitHub Release** cu fișierul **`OSC_<versiune>_portable.zip`**. Utilizatorii descarcă zip-ul, îl dezarhivează, deschid folderul `OSC` și rulează `OSC.exe`.
 
 Dacă tag-ul nu coincide cu `__version__` din `version.py`, workflow-ul eșuează (evită release-uri greșite).
 
