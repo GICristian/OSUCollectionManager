@@ -1,0 +1,189 @@
+namespace CollectionManager.Core.Modules.FileIo;
+
+using CollectionManager.Core.Types;
+using Microsoft.Win32;
+using System;
+using System.IO;
+
+public sealed class OsuPathResolver
+{
+    public static async Task<string> GetOsuPathAsync(Func<string, Task<bool>> thisPathIsCorrect, Func<string, Task<string>> selectDirectoryDialog)
+    {
+        OsuPathResult result = GetOsuOrLazerPath();
+
+        if (string.IsNullOrWhiteSpace(result.Path))
+        {
+            return await GetManualOsuPathAsync(selectDirectoryDialog);
+        }
+
+        if (thisPathIsCorrect is null)
+        {
+            return result.Path;
+        }
+
+        bool isCorrect = await thisPathIsCorrect(result.Path);
+
+        return isCorrect
+            ? result.Path
+            : await GetManualOsuPathAsync(selectDirectoryDialog);
+    }
+
+    public static OsuPathResult GetOsuOrLazerPath()
+    {
+        if (TryGetRunningOsuPath(out string path))
+        {
+            return new OsuPathResult(path, OsuType.Stable);
+        }
+
+        if (TryGetLazerDataPath(out path))
+        {
+            return new OsuPathResult(path, OsuType.Lazer);
+        }
+
+        if (TryGetOsuPathFromRegistry(out path, out OsuType foundType, OsuType.Any))
+        {
+            return new OsuPathResult(path, foundType);
+        }
+
+        return new OsuPathResult(string.Empty, OsuType.None);
+    }
+
+    public static async Task<string> GetManualOsuPathAsync(Func<string, Task<string>> selectDirectoryDialog)
+    {
+        string path = await selectDirectoryDialog("Where is your osu! or lazer folder located at?");
+
+        return IsOsuUserDataDirectory(path)
+            ? path
+            : string.Empty;
+    }
+
+    public static bool TryGetStablePath(out string path)
+    {
+        bool isRunning = TryGetRunningOsuPath(out path);
+        if (isRunning && IsOsuStableDirectory(path))
+        {
+            return true;
+        }
+
+        if (TryGetOsuPathFromRegistry(out path, out _, OsuType.Stable) && IsOsuStableDirectory(path))
+        {
+            return true;
+        }
+
+        return false;
+    }
+
+    public static bool TryGetLazerDataPath(out string path)
+    {
+        path = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "osu");
+
+        if (Directory.Exists(path) && IsOsuLazerDataDirectory(path))
+        {
+            return true;
+        }
+
+        path = null;
+
+        return false;
+    }
+
+    public static bool TryGetRunningOsuPath(out string path)
+    {
+        Process[] processes = null;
+        try
+        {
+            processes = Process.GetProcessesByName("osu!");
+        }
+        catch
+        {
+            // Ignored.
+        }
+
+        if (processes is null || processes.Length is 0)
+        {
+            path = null;
+            return false;
+        }
+
+        foreach (Process process in processes)
+        {
+            try
+            {
+                path = process.Modules[0].FileName;
+                path = path.Remove(path.LastIndexOf('\\'));
+                if (IsOsuUserDataDirectory(path))
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // Ignored.
+            }
+        }
+
+        path = null;
+        return false;
+    }
+
+    public static bool IsOsuUserDataDirectory(string directory) => IsOsuStableDirectory(directory) || IsOsuLazerDataDirectory(directory);
+
+    public static bool IsOsuStableDirectory(string directory) => File.Exists(Path.Combine(directory, "osu!.db"));
+
+    public static bool IsOsuLazerDataDirectory(string directory) => File.Exists(Path.Combine(directory, "client.realm"));
+
+    /// <summary>
+    /// Attempts to retrieve osu! stable or lazer path from windows registry.
+    /// </summary>
+    /// <returns></returns>
+    private static bool TryGetOsuPathFromRegistry(out string path, out OsuType foundType, OsuType osuType = OsuType.Any)
+    {
+        foundType = OsuType.None;
+        if (!OperatingSystem.IsWindows())
+        {
+            path = null;
+            return false;
+        }
+
+        try
+        {
+            const string lazerKey = "osu.File.osz\\Shell\\Open\\Command";
+            const string stableKey = "osustable.File.osz\\Shell\\Open\\Command";
+
+            (string key, OsuType type)[] keys = osuType switch
+            {
+                OsuType.Any => [(lazerKey, OsuType.Lazer), (stableKey, OsuType.Stable)],
+                OsuType.Stable => [(stableKey, OsuType.Stable)],
+                OsuType.Lazer => [(lazerKey, OsuType.Lazer)],
+                OsuType unknown => throw new InvalidOperationException($"OsuType {unknown} is not valid.")
+            };
+
+            foreach ((string key, OsuType type) in keys)
+            {
+                using RegistryKey osuRegistryKey = Registry.ClassesRoot.OpenSubKey(key);
+
+                if (osuRegistryKey is null)
+                {
+                    continue;
+                }
+
+                string keyValue = osuRegistryKey.GetValue(null).ToString();
+                // format: "C:\some\path\to\osu!\or\lazer\osu!.exe" "%1"
+                string exePath = keyValue.Remove(0, 1).Replace("\" \"%1\"", string.Empty);
+                path = Path.GetDirectoryName(exePath);
+                if (IsOsuUserDataDirectory(path))
+                {
+                    foundType = type;
+                    return true;
+                }
+            }
+        }
+        catch (Exception)
+        {
+            // Ignored.
+        }
+
+        path = null;
+        return false;
+    }
+}

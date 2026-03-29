@@ -1,0 +1,71 @@
+# La push pe tag v*.*.*: build Windows, zip portabil, GitHub Release cu atașament.
+# version.py trebuie să coincidă cu tag-ul (ex. tag v0.4.2 ↔ __version__ = "0.4.2").
+
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches osc_collector/version.py
+        shell: pwsh
+        run: |
+          $ref = "${{ github.ref_name }}"
+          if ($ref -notmatch '^v(.+)$') {
+            Write-Error "Unexpected ref: $ref"
+            exit 1
+          }
+          $tagVer = $Matches[1]
+          $raw = Get-Content -Path "osc_collector\version.py" -Raw -Encoding utf8
+          if ($raw -notmatch '__version__\s*=\s*"([^"]+)"') {
+            Write-Error "Cannot parse __version__ in version.py"
+            exit 1
+          }
+          $pyVer = $Matches[1]
+          if ($pyVer -ne $tagVer) {
+            Write-Error "Tag is v$tagVer but version.py has __version__ = `"$pyVer`". Bump version.py then tag v$pyVer."
+            exit 1
+          }
+          "VER=$tagVer" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: venv and Python dependencies
+        shell: pwsh
+        run: |
+          python -m venv .venv
+          .\.venv\Scripts\pip install --upgrade pip
+          .\.venv\Scripts\pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Build (PyInstaller + self-contained Realm tool)
+        shell: pwsh
+        run: .\build_exe.ps1
+
+      - name: Portable zip
+        shell: pwsh
+        run: .\package_osc_release.ps1 -ZipVersion $env:VER
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: OSC ${{ github.ref_name }}
+          files: OSC_${{ env.VER }}_portable.zip
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
