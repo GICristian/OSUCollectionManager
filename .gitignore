@@ -19,3 +19,7 @@ err.txt
 out.txt
 out2.txt
 out3.txt
+
+# Copii locale / alte proiecte (nu fac parte din OSC)
+Collection Manager/
+CollectionManager-master/
