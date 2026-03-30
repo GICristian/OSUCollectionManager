@@ -95,15 +95,15 @@ Rezultatul este folderul **`dist\OSC\`**: `OSC.exe` + folderul PyInstaller (`_in
    `gh auth login` deschide browserul o dată. **Contul conectat în Cursor sau pe github.com nu înlocuiește acest pas** — CLI-ul `gh` își salvează token-ul separat (folder `%AppData%\GitHub CLI`). După login, verifică: `gh auth status`. Scriptul **`create_and_push_github.ps1`** creează repo-ul public **`OSUCollectionManager`** (dacă lipsește), setează `origin` la **HTTPS** și face **`git push -u origin main`**. Poți folosi și variabila de mediu **`GH_TOKEN`** (PAT cu drept `repo`) în loc de `gh auth login`.
 2. **Manual:** poți crea pe GitHub un repo gol **`OSUCollectionManager`**, apoi `git remote add` / `git push` ca înainte. Link așteptat: [github.com/GICristian/OSUCollectionManager](https://github.com/GICristian/OSUCollectionManager).
 3. În **Settings → Actions → General** al repo-ului, lasă **Workflow permissions** pe „Read and write” (ca release-ul să poată publica fișiere).
-4. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.4.2"`).
-5. Creezi un tag **identic** cu prefix `v`: `git tag v0.4.2` apoi `git push origin v0.4.2`.
+4. Înainte de fiecare release: setezi în `osc_collector/version.py` versiunea dorită (ex. `__version__ = "0.5.0"`).
+5. Creezi un tag **identic** cu prefix `v`: `git tag v0.5.0` apoi `git push origin v0.5.0`.
 6. Workflow-ul **Release** (`.github/workflows/release.yml`) rulează pe runner Windows: teste .NET, build PyInstaller + publish self-contained, **Inno Setup** (instalat prin Chocolatey), apoi publică un **GitHub Release** cu un singur fișier: **`OSC_<versiune>_Setup.exe`**. Utilizatorul descarcă setup-ul, îl rulează și urmează asistentul (instalare în `%LocalAppData%\Programs\OSC`, fără admin; shortcut în Meniul Start).
 
 ### Unde apare pe GitHub (sidebar **Releases**)
 
 În pagina repo-ului, în dreapta, secțiunea **Releases** (cea cu **Create a new release**) este unde stau versiunile publice. **Setup-ul care „îi face tot”** este fișierul **`OSC_x.y.z_Setup.exe`** atașat la acel release.
 
-- **Automat:** nu e nevoie să apeși „Create a new release” pentru build. După `git push origin v0.4.2` (tag-ul trebuie să coincidă cu `version.py`), workflow-ul **Release** din **Actions** compilează aplicația + installerul Inno și **publică singur** un release în aceeași listă **Releases**, cu **`OSC_<versiune>_Setup.exe`**. Prietenul deschide release-ul, dă download la setup, Next → Next → gata (shortcut, folder instalare, fără Python/.NET manual).
+- **Automat:** nu e nevoie să apeși „Create a new release” pentru build. După `git push origin v0.5.0` (tag-ul trebuie să coincidă cu `version.py`), workflow-ul **Release** din **Actions** compilează aplicația + installerul Inno și **publică singur** un release în aceeași listă **Releases**, cu **`OSC_<versiune>_Setup.exe`**. Prietenul deschide release-ul, dă download la setup, Next → Next → gata (shortcut, folder instalare, fără Python/.NET manual).
 - **Manual (din site):** poți folosi **Create a new release**, alegi un tag, încarci **`OSC_x.y.z_Setup.exe`** făcut local (`.\build_exe.ps1` apoi `.\build_installer.ps1`), apoi **Publish release**.
 
 **Dacă vezi doar „N tags” și pare gol la Releases:** pe GitHub, tag ≠ release publicat. Fie aștepți / verifici că workflow-ul **Release** a reușit după push la tag, fie creezi tu release-ul din **Create a new release** și atașezi setup-ul.
@@ -118,7 +118,9 @@ După `.\build_exe.ps1`, cu [Inno Setup 6](https://jrsoftware.org/isdl.php) inst
 .\build_installer.ps1
 ```
 
-Rezultat: `installer\Output\OSC_<versiune>_Setup.exe`. Versiunea se ia din `version.py` sau `.\build_installer.ps1 -Version 0.4.3`. Poți edita și `installer\OSC_Setup.iss` în Inno Compiler (`/DMyAppVersion=...` pe linia de comandă suprascrie fallback-ul din script).
+Rezultat: `installer\Output\OSC_<versiune>_Setup.exe`. Versiunea se ia din `version.py` sau `.\build_installer.ps1 -Version 0.5.0`. Poți edita și `installer\OSC_Setup.iss` în Inno Compiler (`/DMyAppVersion=...` pe linia de comandă suprascrie fallback-ul din script).
+
+**Iconiță aplicație:** `assets\OSC.ico` (generat din `logo.png` cu `python tools\generate_osc_icon.py`). PyInstaller (`OSC.spec`) și Inno Setup (`SetupIconFile`) folosesc acest fișier.
 
 **Cum verifici că exe-ul e cel nou:** în bara de titlu trebuie să vezi versiunea din `osc_collector/version.py` și **`build YYYY-MM-DD HH:MM:SS`** (stamp generat de `build_exe.ps1`). În `OSC.spec`, intrarea PyInstaller este `osc_collector/__main__.py`.
 
@@ -158,4 +160,14 @@ Comenzi:
 
 ## Note
 
-Mirror `catboy.best` nu e serviciul oficial osu!; respectă [termenii](https://osu.ppy.sh/legal/terms) și rate limits.
+Mirror-urile terțe nu sunt serviciul oficial osu!; respectă [termenii](https://osu.ppy.sh/legal/terms) și regulile fiecărui site.
+
+**Mirror .osz:** metadata colecției vine din **osu!Collector** (API public). Poți descărca astfel:
+
+1. **Site oficial (recomandat dacă ai cont osu!)** — în **Setări**, câmpul **Cookie osu.ppy.sh**: același tip de autentificare ca în [Piotrekol Collection Manager](https://github.com/Piotrekol/CollectionManager) (`downloadSources.json`: URL `https://osu.ppy.sh/beatmapsets/{id}/download`, `?noVideo=1`, Referer pe beatmapset). Copiază valoarea header-ului **Cookie** din DevTools când ești logat pe [osu.ppy.sh](https://osu.ppy.sh) (ex. ghid video din CM: [streamable.com/lhlr3d](https://streamable.com/lhlr3d)). Descărcările rulează într-un **pool continuu** (până la **10** fire simultan), cu **câte un client HTTP reutilizabil pe fir** (keep-alive TCP). Nu mai există throttling artificial pe minut (încetinea totul); dacă **osu.ppy.sh** răspunde **403**, setul trece automat la **mirror-uri**. Modul **Automat** folosește **ordinea fixă** Beatconnect → … fără „probă” secvențială la început (economisește timp la start).
+
+2. **Mirror-uri terțe** — dacă cookie-ul e gol, se folosesc doar mirror-urile. Implicit **Beatconnect**; **Catboy** poate da **403**; **Nerinyan** poate întoarce **HTML**. Modul **Automat** le încearcă în lanț.
+
+Respectă termenii osu! și ai fiecărui mirror.
+
+Dacă vezi **getaddrinfo failed** sau **11001**, problema e **DNS / rețea pe PC** (nu rezolvă numele domeniilor), nu lista de hărți. Verifică internet, DNS (ex. 8.8.8.8), VPN, fișierul `hosts`, firewall. OSC oprește descărcarea din timp cu un dialog dacă **niciun** mirror nu e rezolvabil.

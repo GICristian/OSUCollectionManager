@@ -9,6 +9,7 @@ from osc_collector.osu_paths import (
     discover_lazer_realm_file,
     effective_lazer_realm_path,
     find_realm_files_under_osu,
+    is_dir_writable,
     is_distribution_bundle_dir,
     looks_like_osu_data_dir,
     normalize_osu_data_dir,
@@ -27,6 +28,12 @@ def test_looks_like_osu_data_dir_versioned_realm_only() -> None:
 def test_looks_like_osu_data_dir_empty_folder() -> None:
     with tempfile.TemporaryDirectory() as d:
         assert looks_like_osu_data_dir(Path(d)) is False
+
+
+def test_is_dir_writable_creates_and_probe() -> None:
+    with tempfile.TemporaryDirectory() as d:
+        sub = Path(d) / "nested" / "dl"
+        assert is_dir_writable(sub) is True
 
 
 def test_discover_prefers_highest_versioned_realm() -> None:

@@ -108,6 +108,55 @@ def path_is_under_distribution_bundle(path: Path) -> bool:
     return False
 
 
+def is_dir_writable(path: Path) -> bool:
+    """True dacă putem crea ``path`` și scrie un fișier temporar în el."""
+    try:
+        p = path.expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    probe = p / ".__osc_write_probe__.tmp"
+    try:
+        probe.write_bytes(b"\x00")
+        probe.unlink(missing_ok=True)
+        return True
+    except OSError:
+        try:
+            probe.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return False
+
+
+def try_clear_readonly_windows(path: Path) -> bool:
+    """
+    Best-effort: pe Windows scoate bitul de read-only de pe folder (și câțiva părinți).
+    Returnează True dacă după aceea ``is_dir_writable`` reușește pentru ``path``.
+    """
+    if sys.platform != "win32":
+        return False
+    import stat
+
+    try:
+        p = path.expanduser()
+        p.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    try:
+        chain = [p, *list(p.parents)[:12]]
+        for cand in chain:
+            if not cand.exists():
+                continue
+            try:
+                mode = cand.stat().st_mode
+                cand.chmod(mode | stat.S_IWRITE)
+            except OSError:
+                continue
+    except OSError:
+        pass
+    return is_dir_writable(p)
+
+
 def normalize_osu_data_dir(osu_data_dir: Path) -> Path:
     """
     Înlocuiește căi greșite: folderul exe-ului (frozen) sau folderul build PyInstaller

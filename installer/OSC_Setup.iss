@@ -4,7 +4,7 @@
 ; Ieșire: installer\Output\OSC_<versiune>_Setup.exe
 
 #ifndef MyAppVersion
-#define MyAppVersion "0.4.4"
+#define MyAppVersion "0.5.0"
 #endif
 #define MyAppName "OSC"
 #define MyAppPublisher "OSC"
@@ -15,6 +15,7 @@ AppId={{A7B8C9D0-E1F2-4A5B-8C9D-0E1F2A3B4C5D}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
+SetupIconFile=..\assets\OSC.ico
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=Output

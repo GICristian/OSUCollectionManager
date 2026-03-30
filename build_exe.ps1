@@ -1,4 +1,4 @@
-# Construiește OscLazerRealmImport (dotnet) + OSC.exe (PyInstaller).
+﻿# Construiește OscLazerRealmImport (dotnet) + OSC.exe (PyInstaller).
 # Ieșire: dist\OSC\OSC.exe și dist\OSC\OscLazerRealmImport.exe
 #
 # Build-ul merge întâi în dist\_osc_build_staging\OSC\ ca să nu șteargă dist\OSC
@@ -78,7 +78,7 @@ try {
       }
     }
     Write-Host ""
-    Write-Host "Actualizare parțială: tot output-ul dotnet publish → dist\OSC (fișierele blocate de OSC.exe sar peste)."
+    Write-Host "Actualizare partiala: tot output-ul dotnet publish -> dist\OSC (fisierele blocate de OSC.exe sar peste)."
     Write-Host "Pentru OSC.exe / UI nou (sidebar), închide aplicația și rulează din nou build_exe.ps1."
     Write-Host ""
   }
@@ -89,12 +89,12 @@ if ($promoted) {
     Remove-Item $stageDist -Recurse -Force -ErrorAction SilentlyContinue
   }
   Write-Host ""
-  Write-Host "OK: dist\OSC\ — dublu-clic pe OSC.exe. Trimite întreg folderul OSC (zip); nu e nevoie de Python sau .NET pe PC-ul destinatarului."
+  Write-Host "OK: dist\OSC\ - dublu-clic pe OSC.exe. Trimite intreg folderul OSC (zip); nu e nevoie de Python sau .NET pe PC-ul destinatarului."
   Write-Host "Note: dist\_osc_build_staging is removed after a successful build (folder is temporary)."
   Write-Host ""
 } else {
   Write-Host ""
   Write-Host "New build folder (copy over dist\OSC after closing OSC.exe):"
-  Write-Host "  $built"
+  Write-Host ('  ' + $built)
   Write-Host ""
 }

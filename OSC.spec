@@ -8,6 +8,7 @@ from PyInstaller.utils.hooks import collect_all
 block_cipher = None
 
 project_root = Path(SPECPATH)
+_app_icon = project_root / "assets" / "OSC.ico"
 
 datas, binaries, hiddenimports = collect_all("customtkinter")
 
@@ -48,6 +49,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=str(_app_icon) if _app_icon.is_file() else None,
 )
 
 coll = COLLECT(

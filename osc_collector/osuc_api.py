@@ -49,13 +49,38 @@ def _flatten_checksums(beatmapsets: list[dict[str, Any]]) -> list[str]:
     return out
 
 
+def _as_int_id(v: Any) -> int | None:
+    if isinstance(v, int) and v > 0:
+        return v
+    if isinstance(v, str) and v.isdigit():
+        n = int(v)
+        return n if n > 0 else None
+    return None
+
+
 def _beatmapset_ids(beatmapsets: list[dict[str, Any]]) -> list[int]:
-    ids: list[int] = []
+    """Extrage ID-uri unice de beatmapset (oglindă API osu! / osu!Collector)."""
+    seen: set[int] = set()
+    ordered: list[int] = []
     for bms in beatmapsets:
-        sid = bms.get("id")
-        if isinstance(sid, int):
-            ids.append(sid)
-    return ids
+        if not isinstance(bms, dict):
+            continue
+        for key in ("id", "beatmapset_id", "beatmapsetId", "BeatmapsetId"):
+            sid = _as_int_id(bms.get(key))
+            if sid is not None and sid not in seen:
+                seen.add(sid)
+                ordered.append(sid)
+                break
+        for bm in bms.get("beatmaps") or []:
+            if not isinstance(bm, dict):
+                continue
+            for key in ("beatmapset_id", "beatmapsetId", "beatmapset", "parent_id"):
+                bid = _as_int_id(bm.get(key))
+                if bid is not None and bid not in seen:
+                    seen.add(bid)
+                    ordered.append(bid)
+                    break
+    return ordered
 
 
 def fetch_collection(client: httpx.Client, collection_id: int) -> CollectionData:

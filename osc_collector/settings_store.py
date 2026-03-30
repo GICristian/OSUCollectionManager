@@ -7,6 +7,10 @@ import os
 from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 
+from osc_collector.builtin_mirrors import ALL_MIRROR_PRESET_KEYS
+
+DEFAULT_MIRROR_DOWNLOAD_TEMPLATE = "https://beatconnect.io/b/{id}"
+
 
 @dataclass
 class AppSettings:
@@ -19,6 +23,9 @@ class AppSettings:
     osu_data_dir: str
     developer_mode: bool
     diagnostic_verbose: bool = False
+    mirror_download_template: str = ""
+    mirror_preset: str = "auto"
+    osu_web_cookie: str = ""
 
     def merged_paths(self, defaults: AppSettings) -> AppSettings:
         """String gol = folosește implicitul."""
@@ -31,7 +38,19 @@ class AppSettings:
             osu_data_dir=self.osu_data_dir or defaults.osu_data_dir,
             developer_mode=self.developer_mode,
             diagnostic_verbose=self.diagnostic_verbose,
+            mirror_download_template=self.mirror_download_template
+            or defaults.mirror_download_template,
+            mirror_preset=_normalize_mirror_preset(self.mirror_preset, defaults.mirror_preset),
+            osu_web_cookie=self.osu_web_cookie or defaults.osu_web_cookie,
         )
+
+
+def _normalize_mirror_preset(raw: str, fallback: str) -> str:
+    p = (raw or "").strip().lower()
+    if p in ALL_MIRROR_PRESET_KEYS:
+        return p
+    fb = (fallback or "auto").strip().lower()
+    return fb if fb in ALL_MIRROR_PRESET_KEYS else "auto"
 
 
 def settings_file_path() -> Path:
@@ -65,16 +84,23 @@ def default_settings() -> AppSettings:
         osu_data_dir=str(osu_data),
         developer_mode=False,
         diagnostic_verbose=False,
+        mirror_download_template=DEFAULT_MIRROR_DOWNLOAD_TEMPLATE,
+        mirror_preset="auto",
+        osu_web_cookie="",
     )
 
 
-def _sanitize_loaded_settings(merged: AppSettings) -> tuple[AppSettings, bool]:
+def _sanitize_loaded_settings(
+    merged: AppSettings,
+    base: AppSettings,
+) -> tuple[AppSettings, bool]:
     """
     Corectează căi care indică folderul aplicației / build în loc de date osu!.
     Persistă la încărcare dacă s-a schimbat ceva.
     """
     from osc_collector.collection_manager_config import osu_location_from_collection_manager
     from osc_collector.osu_paths import (
+        is_dir_writable,
         looks_like_osu_data_dir,
         normalize_osu_data_dir,
         path_is_under_distribution_bundle,
@@ -118,6 +144,24 @@ def _sanitize_loaded_settings(merged: AppSettings) -> tuple[AppSettings, bool]:
             out = replace(out, realm_path="")
             changed = True
 
+    dd = out.download_dir.strip()
+    if dd:
+        try:
+            dp = Path(dd).expanduser()
+            try:
+                dr = dp.resolve()
+            except OSError:
+                dr = dp
+            if path_is_under_distribution_bundle(dr):
+                out = replace(out, download_dir=base.download_dir)
+                changed = True
+            elif not is_dir_writable(dr):
+                out = replace(out, download_dir=base.download_dir)
+                changed = True
+        except OSError:
+            out = replace(out, download_dir=base.download_dir)
+            changed = True
+
     return out, changed
 
 
@@ -136,9 +180,12 @@ def load_settings() -> AppSettings:
             osu_data_dir=str(raw.get("osu_data_dir") or ""),
             developer_mode=bool(raw.get("developer_mode", base.developer_mode)),
             diagnostic_verbose=bool(raw.get("diagnostic_verbose", base.diagnostic_verbose)),
+            mirror_download_template=str(raw.get("mirror_download_template") or ""),
+            mirror_preset=str(raw.get("mirror_preset") or "auto"),
+            osu_web_cookie=str(raw.get("osu_web_cookie") or ""),
         )
         merged = loaded.merged_paths(base)
-        fixed, changed = _sanitize_loaded_settings(merged)
+        fixed, changed = _sanitize_loaded_settings(merged, base)
         if changed:
             save_settings(fixed)
         return fixed

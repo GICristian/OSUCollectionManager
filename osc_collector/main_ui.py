@@ -6,6 +6,8 @@ import os
 import queue
 import sys
 import threading
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import time
 import traceback
 import tkinter as tk
 import tkinter.filedialog as filedialog
@@ -32,7 +34,22 @@ from osc_collector.collection_db import (
     merge_collection,
     parse_collection_db,
 )
-from osc_collector.download_maps import download_beatmapset
+from osc_collector.builtin_mirrors import mirror_templates_for_job
+from osc_collector.mirror_net import (
+    exclude_templates_for_failed_dns_hosts,
+    mirror_dns_preflight,
+    short_download_error_message,
+)
+from osc_collector.download_maps import (
+    AllMirrorsFailed,
+    DEFAULT_PARALLEL_DOWNLOADS,
+    create_mirror_client,
+    download_beatmapset_with_fallback,
+    existing_valid_set_ids,
+    thread_local_download_client,
+    unique_beatmapset_ids_preserve_order,
+)
+from osc_collector.osu_site_download import normalize_osu_web_cookie
 from osc_collector.lazer_realm_import import (
     import_collection as import_lazer_realm,
     realm_remove_beatmaps_from_collection,
@@ -41,9 +58,11 @@ from osc_collector.library_service import list_lazer_collections_detail, list_st
 from osc_collector.osu_paths import (
     effective_lazer_realm_path,
     find_realm_files_under_osu,
+    is_dir_writable,
     normalize_osu_data_dir,
     path_is_under_distribution_bundle,
     pick_best_realm_candidate,
+    try_clear_readonly_windows,
 )
 from osc_collector.osuc_api import CollectionData, fetch_collection, parse_collection_id
 from osc_collector.settings_dialog import SettingsDialog
@@ -58,6 +77,28 @@ except ImportError:
 
 ctk.set_appearance_mode("dark")
 ctk.set_default_color_theme("blue")
+
+# Limită rânduri Lazer în sidebar (fiecare rând = mai multe widget-uri CustomTkinter).
+_LAZER_UI_ROW_CAP = 500
+
+
+def _mirror_job_log_line(
+    preset: str,
+    chain_len: int,
+    *,
+    osu_official_cookie: bool = False,
+) -> str:
+    prefix = ""
+    if osu_official_cookie:
+        prefix = "Întâi osu.ppy.sh (cookie salvat), apoi "
+    if preset == "auto":
+        return (
+            f"{prefix}mirror: automat — {chain_len} surse (ordonate după probă); "
+            "la eșec trece la următoarea."
+        )
+    if preset == "custom":
+        return f"{prefix}mirror: URL personalizat (o sursă)."
+    return f"{prefix}mirror: {preset!r} (o sursă)."
 
 
 def _theme_hex(color: tuple[str, str] | str) -> str:
@@ -129,6 +170,14 @@ class OscApp(ctk.CTk):
         self._show_import_view()
         self._enqueue_main(self._refresh_sidebar)
         self.after(0, self._poll_ui_queue)
+
+    def _safe_progress_set(self, v: float) -> None:
+        try:
+            p = getattr(self, "progress", None)
+            if p is not None and p.winfo_exists():
+                p.set(min(1.0, max(0.0, v)))
+        except tk.TclError:
+            pass
 
     def _enqueue_main(self, fn: Callable[[], None]) -> None:
         """Rulează pe firul Tk; nu folosi self.after din thread-uri de fundal (Windows)."""
@@ -886,6 +935,8 @@ class OscApp(ctk.CTk):
         if p:
             self.dl_path.delete(0, "end")
             self.dl_path.insert(0, p)
+            self.settings.download_dir = p.strip()
+            save_settings(self.settings)
 
     def _on_auto_realm(self) -> None:
         dbg("UI: _on_auto_realm")
@@ -1137,11 +1188,8 @@ class OscApp(ctk.CTk):
             return
 
         self._lazer_last_collections = [dict(r) for r in rows]
-        self._lazer_expanded = {
-            str(r.get("id", "")).strip()
-            for r in rows
-            if str(r.get("id", "")).strip()
-        }
+        # Collapsed implicit: evită mii de widget-uri (crash / îngheț la multe colecții).
+        self._lazer_expanded = set()
         for row in sorted(rows, key=lambda r: str(r.get("name", "")).lower()):
             self._build_lazer_collection_sidebar_block(row)
 
@@ -1305,6 +1353,22 @@ class OscApp(ctk.CTk):
 
         content_body = ctk.CTkFrame(body, fg_color="transparent")
         content_body.pack(fill="x", expand=True)
+
+        total_maps = len(items)
+        if total_maps > _LAZER_UI_ROW_CAP:
+            ctk.CTkLabel(
+                content_body,
+                text=(
+                    f"Afișez primele {_LAZER_UI_ROW_CAP} din {total_maps} hărți "
+                    "(limită performanță). „Bifează tot” se aplică doar la rândurile afișate."
+                ),
+                font=("Segoe UI", 9),
+                text_color="#f59e0b",
+                wraplength=max(280, T.SIDEBAR_WIDTH - 24),
+                justify="left",
+                anchor="w",
+            ).pack(anchor="w", pady=(0, 6))
+            items = items[:_LAZER_UI_ROW_CAP]
 
         if not items:
             ctk.CTkLabel(
@@ -1752,47 +1816,293 @@ class OscApp(ctk.CTk):
 
     def _phase_download(self, data: CollectionData) -> str:
         try:
-            dest = Path(self.dl_path.get().strip())
-            dest.mkdir(parents=True, exist_ok=True)
-            total = len(data.beatmapset_ids)
-            dbg(f"worker: _phase_download dest={dest} total_sets={total}")
-            self._enqueue_main( lambda: self._log(f"Descărcări: {total} set-uri → {dest}"))
-            with httpx.Client() as client:
-                for i, sid in enumerate(data.beatmapset_ids):
+            dest_raw = (self.settings.download_dir or "").strip()
+            if not dest_raw:
+                self._enqueue_main(
+                    lambda: messagebox.showerror(
+                        "OSC",
+                        "Folderul de descărcări e gol. Alege un folder la pasul 3 sau în Setări.",
+                    ),
+                )
+                self._enqueue_main(
+                    lambda: self.status.configure(text="Eroare.", text_color="#ef4444"),
+                )
+                return "error"
+            dest = Path(dest_raw)
+            try:
+                dest.mkdir(parents=True, exist_ok=True)
+            except OSError as e:
+                self._enqueue_main(
+                    lambda err=e: messagebox.showerror(
+                        "OSC",
+                        f"Nu pot crea folderul de descărcări:\n{dest}\n\n{err}",
+                    ),
+                )
+                self._enqueue_main(
+                    lambda: self.status.configure(text="Eroare folder.", text_color="#ef4444"),
+                )
+                return "error"
+            if not is_dir_writable(dest):
+                try_clear_readonly_windows(dest)
+            if not is_dir_writable(dest):
+                self._enqueue_main(
+                    lambda d=str(dest.resolve()): messagebox.showerror(
+                        "OSC — nu se poate scrie în folder",
+                        "OSC nu poate salva .osz aici (folder read-only, permisiuni sau "
+                        "protecție antivirus / Controlled folder access).\n\n"
+                        "Aplicația nu setează singură read-only. În Explorer, la foldere, "
+                        "bifa „Read-only\" nu înseamnă mereu că nu poți scrie — verifică "
+                        "Proprietăți → Securitate → Modificare pentru contul tău.\n\n"
+                        f"Folder încercat:\n{d}\n\n"
+                        "Alege alt folder (ex. D:\\Downloads\\OSC) cu butonul … sau din Setări, "
+                        "apoi încearcă din nou.",
+                    ),
+                )
+                self._enqueue_main(
+                    lambda: self.status.configure(
+                        text="Folder descărcări necitibil.",
+                        text_color="#ef4444",
+                    ),
+                )
+                return "error"
+            set_ids = unique_beatmapset_ids_preserve_order(list(data.beatmapset_ids))
+            total = len(set_ids)
+            dbg(f"worker: _phase_download dest={dest} total_sets={total} md5={len(data.md5_checksums)}")
+            if total == 0:
+                if len(data.md5_checksums) > 0:
+                    msg = (
+                        "API osu!Collector nu a furnizat ID-uri de beatmapset pentru această colecție, "
+                        "deci mirror-ul nu poate descărca .osz.\n\n"
+                        "Apasă din nou „Încarcă” la pașii 1–2. Dacă problema persistă, notează ID-ul colecției."
+                    )
+                    self._enqueue_main(
+                        lambda: self._log(
+                            "0 beatmapset IDs din API — descărcare oprită. Reîncarcă colecția.",
+                        ),
+                    )
+                    self._enqueue_main(lambda: messagebox.showwarning("OSC — descărcare", msg))
+                else:
+                    self._enqueue_main(
+                        lambda: messagebox.showwarning(
+                            "OSC",
+                            "Colecția nu conține beatmap-uri de descărcat.",
+                        ),
+                    )
+                self._enqueue_main(
+                    lambda: self.status.configure(text="Nimic de descărcat.", text_color=T.TEXT_MUTED),
+                )
+                return "error"
+            self._enqueue_main(
+                lambda: self._log(f"Descărcări: {total} set-uri → {dest.resolve()}"),
+            )
+            self._enqueue_main(lambda: self._safe_progress_set(0.0))
+            saved_n = 0
+            skip_n = 0
+            err_n = 0
+            prog_gate = [0.0]
+            est_osz_bytes = 40 * 1024 * 1024
+            existing_ids = existing_valid_set_ids(dest)
+            osu_cookie = normalize_osu_web_cookie(self.settings.osu_web_cookie)
+            parallel = min(DEFAULT_PARALLEL_DOWNLOADS, max(1, total))
+            with create_mirror_client() as rank_client:
+                mirror_chain = mirror_templates_for_job(
+                    self.settings.mirror_preset,
+                    self.settings.mirror_download_template,
+                    rank_client,
+                )
+            dbg(
+                f"worker: _phase_download parallel={parallel} "
+                f"existing_cache={len(existing_ids)} set-uri "
+                f"mirror_preset={self.settings.mirror_preset!r} chain_len={len(mirror_chain)}",
+            )
+            self._enqueue_main(
+                lambda pl=self.settings.mirror_preset, n=len(mirror_chain), oc=bool(osu_cookie): self._log(
+                    _mirror_job_log_line(pl, n, osu_official_cookie=oc),
+                ),
+            )
+            dns_fail, dns_ok = mirror_dns_preflight(mirror_chain)
+            failed_host_set = {h for h, _ in dns_fail}
+            if dns_fail and not dns_ok:
+                detail = "\n".join(f"  • {h}: {msg}" for h, msg in dns_fail)
+                dns_body = (
+                    "Calculatorul nu poate rezolva numele mirror-urilor (DNS → adresă IP). "
+                    "OSC nu poate descărca nimic până rețeaua rezolvă aceste domenii.\n\n"
+                    "Verifică:\n"
+                    "• Internet (deschide un site în browser)\n"
+                    "• DNS: în Windows, setează DNS 8.8.8.8 / 1.1.1.1 pe adaptorul activ\n"
+                    "• VPN sau proxy — încearcă fără sau cu alt server DNS\n"
+                    "• Fișierul hosts (C:\\Windows\\System32\\drivers\\etc\\hosts)\n"
+                    "• Antivirus / firewall care blochează DNS\n\n"
+                    "Proba OSC (socket.getaddrinfo, port 443):\n"
+                    f"{detail}"
+                )
+                self._enqueue_main(
+                    lambda b=dns_body: messagebox.showerror("OSC — eroare DNS / rețea", b),
+                )
+                self._enqueue_main(
+                    lambda: self._log(
+                        "Descărcare oprită: niciun mirror nu e rezolvabil prin DNS (vezi dialogul).",
+                    ),
+                )
+                self._enqueue_main(
+                    lambda: self.status.configure(text="DNS / rețea.", text_color="#ef4444"),
+                )
+                return "error"
+            if dns_fail and dns_ok:
+                bad = ", ".join(h for h, _ in dns_fail)
+                self._enqueue_main(
+                    lambda b=bad: self._log(
+                        f"Notă: DNS eșuat pentru {b} — aceste mirror-uri sunt scoase din lanț "
+                        f"(nu se mai încearcă la fiecare set).",
+                    ),
+                )
+                mirror_chain = exclude_templates_for_failed_dns_hosts(
+                    mirror_chain,
+                    failed_host_set,
+                )
+                dbg(
+                    f"worker: mirror chain după filtru DNS: "
+                    f"{len(mirror_chain)} șabloane rămase",
+                )
+            if not mirror_chain:
+                self._enqueue_main(
+                    lambda: messagebox.showerror(
+                        "OSC",
+                        "Niciun mirror disponibil după filtrarea DNS. Verifică rețeaua.",
+                    ),
+                )
+                self._enqueue_main(
+                    lambda: self._log("Descărcare oprită: lanț mirror gol după DNS."),
+                )
+                return "error"
+            prog_lock = threading.Lock()
+            prog_state: dict = {
+                "finished": 0,
+                "bytes": 0,
+                "last_by_sid": {},
+            }
+
+            def _progress_from_state() -> float:
+                with prog_lock:
+                    fin = prog_state["finished"]
+                    b = prog_state["bytes"]
+                cap = max(1, total * est_osz_bytes)
+                from_bytes = min(0.99, b / cap)
+                from_done = fin / max(1, total)
+                if fin >= total:
+                    return 1.0
+                return min(0.99, max(from_done, from_bytes))
+
+            def on_chunk(sid: int, done: int, full: int) -> None:
+                with prog_lock:
+                    prev = prog_state["last_by_sid"].get(sid, 0)
+                    prog_state["bytes"] += max(0, done - prev)
+                    prog_state["last_by_sid"][sid] = done
+                fr = _progress_from_state()
+                now = time.monotonic()
+                should = (
+                    (full > 0 and done >= full)
+                    or fr >= 0.997
+                    or (now - prog_gate[0]) >= 0.35
+                )
+                if should:
+                    prog_gate[0] = now
+                    self._enqueue_main(lambda frc=fr: self._safe_progress_set(frc))
+
+            def download_job(sid: int) -> tuple[str, int, Path | None, BaseException | None]:
+                if self._cancel.is_set():
+                    return ("cancel", sid, None, None)
+                try:
+                    client = thread_local_download_client()
+                    out = download_beatmapset_with_fallback(
+                        client,
+                        sid,
+                        dest,
+                        mirror_chain,
+                        on_progress=lambda d, f, _s=sid: on_chunk(_s, d, f),
+                        skip_existing=True,
+                        existing_valid_ids=existing_ids,
+                        should_cancel=self._cancel.is_set,
+                        official_osu_cookie=osu_cookie or None,
+                    )
+                    return ("ok" if out else "skip", sid, out, None)
+                except InterruptedError:
+                    return ("cancel", sid, None, None)
+                except Exception as e:
+                    return ("err", sid, None, e)
+
+            dbg(
+                f"worker: _phase_download pool continuu max_workers={parallel} "
+                f"client HTTP per fir (keep-alive)",
+            )
+            executor = ThreadPoolExecutor(max_workers=parallel)
+            future_map = {executor.submit(download_job, sid): sid for sid in set_ids}
+            user_cancelled = False
+            try:
+                for fut in as_completed(future_map):
                     if self._cancel.is_set():
-                        dbg("worker: _phase_download anulat (steag)")
-                        return "cancel"
+                        user_cancelled = True
+                        break
+                    sid = future_map[fut]
                     try:
-                        dbg(f"worker: _phase_download [{i + 1}/{total}] set_id={sid}")
-
-                        def prog(
-                            done: int,
-                            full: int,
-                            idx: int = i + 1,
-                            t: int = total,
-                        ) -> None:
-                            if full <= 0:
-                                return
-                            f = (idx - 1) / t + (done / full) / t
-                            self._enqueue_main( lambda fr=f: self.progress.set(min(1.0, fr)))
-
-                        out = download_beatmapset(
-                            client,
-                            sid,
-                            dest,
-                            on_progress=prog,
-                            skip_existing=True,
-                        )
-                        self._enqueue_main(
-                            lambda s=sid, n=i + 1, t=total, o=out: self._log(
-                                f"[{n}/{t}] {s}: "
-                                + ("OK" if o else "sărit"),
-                            ),
-                        )
+                        status, _sid, out, exc = fut.result()
                     except Exception as e:
-                        diag_warning(f"download beatmapset_id={sid}: {e!s}")
-                        self._enqueue_main( lambda err=e, s=sid: self._log(f"{s}: {err}"))
-            self._enqueue_main( lambda: self.progress.set(1.0))
+                        status, out, exc = "err", None, e
+                    with prog_lock:
+                        prog_state["finished"] += 1
+                        prog_state["last_by_sid"].pop(sid, None)
+                    fr = _progress_from_state()
+                    self._enqueue_main(lambda frc=fr: self._safe_progress_set(frc))
+                    if status == "ok":
+                        saved_n += 1
+                        existing_ids.add(sid)
+                        self._enqueue_main(
+                            lambda s=sid: self._log(f"{s}: OK"),
+                        )
+                    elif status == "skip":
+                        skip_n += 1
+                        self._enqueue_main(
+                            lambda s=sid: self._log(f"{s}: sărit (există deja)"),
+                        )
+                    elif status == "cancel":
+                        self._enqueue_main(
+                            lambda s=sid: self._log(f"{s}: anulat"),
+                        )
+                    else:
+                        err_n += 1
+                        err = exc or RuntimeError("necunoscut")
+                        diag_warning(f"download beatmapset_id={sid}: {err!s}")
+                        if isinstance(err, AllMirrorsFailed):
+                            err_line = str(err)
+                        else:
+                            err_line = short_download_error_message(err)
+                        self._enqueue_main(
+                            lambda msg=err_line, s=sid: self._log(f"{s}: {msg}"),
+                        )
+            finally:
+                executor.shutdown(
+                    wait=not user_cancelled,
+                    cancel_futures=user_cancelled,
+                )
+            if user_cancelled:
+                dbg("worker: _phase_download anulat (steag)")
+                return "cancel"
+            self._enqueue_main(lambda: self._safe_progress_set(1.0))
+            summ = f"Rezumat: noi={saved_n}, sărite={skip_n}, erori={err_n} → {dest}"
+            dbg(f"worker: _phase_download {summ}")
+            self._enqueue_main(lambda s=summ: self._log(s))
+            if saved_n == 0 and err_n == 0 and skip_n > 0:
+                self._enqueue_main(
+                    lambda d=dest: self._log(
+                        f"Toate {skip_n} set-uri erau deja în folder (sărite). Folder: {d}",
+                    ),
+                )
+            elif saved_n == 0 and err_n > 0:
+                self._enqueue_main(
+                    lambda: self._log(
+                        "Niciun .osz nou: verifică liniile cu erori mai sus (mirror / set lipsă).",
+                    ),
+                )
             dbg("worker: _phase_download terminat OK")
             return "ok"
         except Exception as e:
@@ -1826,7 +2136,7 @@ class OscApp(ctk.CTk):
             self._enqueue_main(
                 lambda: messagebox.showinfo(
                     "OSC",
-                    "Descărcare terminată.\n"
+                    "Pas finalizat. Verifică log-ul de mai jos și folderul de descărcări.\n\n"
                     "Pasul 4: importă .osz în osu, apoi pasul 5 pentru colecție.",
                 ),
             )
