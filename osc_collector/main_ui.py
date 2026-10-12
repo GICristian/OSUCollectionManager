@@ -1007,7 +1007,6 @@ class OscApp(ctk.CTk):
             bg=bg_t,
             fg=fg_t,
             insertbackground=fg_t,
-            disabledforeground=fg_t,
             selectbackground=_theme_hex(T.ACCENT_MUTED),
             selectforeground=fg_t,
             relief="flat",
@@ -1019,6 +1018,8 @@ class OscApp(ctk.CTk):
             pady=10,
             undo=False,
         )
+        if "disabledforeground" in native.configure():
+            native.configure(disabledforeground=fg_t)
         native.pack(fill="both", expand=True)
         native.insert("1.0", (body or "").strip() or "(fără detalii)")
         native.configure(state="disabled")
@@ -1097,8 +1098,10 @@ class OscApp(ctk.CTk):
                 def apply_result() -> None:
                     if load_gen != self._lazer_sidebar_generation:
                         return
-                    self._populate_sidebar_lazer(osu_root, rows_ok, err_ok)
-                    self._dismiss_loading_overlay()
+                    try:
+                        self._populate_sidebar_lazer(osu_root, rows_ok, err_ok)
+                    finally:
+                        self._dismiss_loading_overlay()
 
                 self._enqueue_main(apply_result)
 
