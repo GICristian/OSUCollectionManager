@@ -4,7 +4,7 @@
 ; Ieșire: installer\Output\OSC_<versiune>_Setup.exe
 
 #ifndef MyAppVersion
-#define MyAppVersion "0.5.0"
+#define MyAppVersion "0.5.1"
 #endif
 #define MyAppName "OSC"
 #define MyAppPublisher "OSC"

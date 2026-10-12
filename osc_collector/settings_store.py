@@ -9,7 +9,9 @@ from pathlib import Path
 
 from osc_collector.builtin_mirrors import ALL_MIRROR_PRESET_KEYS
 
-DEFAULT_MIRROR_DOWNLOAD_TEMPLATE = "https://beatconnect.io/b/{id}"
+DEFAULT_MIRROR_DOWNLOAD_TEMPLATE = (
+    "https://mirror.hinamizawa.ai/api/v1/hinai/d/{id}"
+)
 
 
 @dataclass

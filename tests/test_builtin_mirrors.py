@@ -23,8 +23,8 @@ def test_beatmap_url_prefix() -> None:
 def test_rank_all_fail_preserves_order() -> None:
     with patch("osc_collector.builtin_mirrors.probe_mirror", return_value=False):
         ranked = rank_builtin_mirrors(MagicMock())
-    assert len(ranked) == 4
-    assert ranked[0] == "https://beatconnect.io/b/{id}"
+    assert ranked == list(BUILTIN_MIRROR_TEMPLATES_ORDERED)
+    assert ranked[0].startswith("https://mirror.hinamizawa.ai/")
 
 
 def test_job_auto_uses_static_builtin_order() -> None:

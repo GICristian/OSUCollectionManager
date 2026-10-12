@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from osc_collector.osu_site_download import (
+    OfficialDownloadGate,
     OsuOfficialThrottler,
     normalize_osu_web_cookie,
     official_beatmapset_download_url,
@@ -33,3 +34,41 @@ def test_throttler_first_slots_unblocked() -> None:
     thr.register_success()
     thr.wait_for_slot()
     thr.register_success()
+    assert thr.inflight == 0
+
+
+def test_throttler_reserves_one_inflight_slot() -> None:
+    thr = OsuOfficialThrottler(per_minute=3, per_hour=170)
+    thr.wait_for_slot()
+    assert thr.inflight == 1
+    thr.release_slot()
+    assert thr.inflight == 0
+
+
+def test_throttler_waits_for_minute_window() -> None:
+    clock = [0.0]
+
+    def now() -> float:
+        return clock[0]
+
+    def sleep(seconds: float) -> None:
+        clock[0] += seconds
+
+    thr = OsuOfficialThrottler(
+        per_minute=1,
+        per_hour=10,
+        now_fn=now,
+        sleep_fn=sleep,
+    )
+    thr.wait_for_slot()
+    thr.register_success()
+    thr.wait_for_slot()
+    assert clock[0] >= 60.0
+    assert thr.inflight == 1
+
+
+def test_official_gate_stops_once() -> None:
+    gate = OfficialDownloadGate()
+    assert gate.stop("429") == "429"
+    assert gate.stop("din nou") is None
+    assert gate.is_stopped() is True
