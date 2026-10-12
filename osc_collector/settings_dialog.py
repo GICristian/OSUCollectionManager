@@ -24,8 +24,8 @@ class SettingsDialog(ctk.CTkToplevel):
         self._data = AppSettings(**settings.__dict__)
 
         self.title("Setări OSC")
-        self.geometry("560x720")
-        self.minsize(520, 600)
+        self.geometry("580x860")
+        self.minsize(520, 680)
         self.configure(fg_color=T.BG_CARD)
         self.transient(master)
         self.grab_set()
@@ -102,10 +102,14 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             self,
             text=(
-                "Cookie osu.ppy.sh (opțional) — ca în Collection Manager: autentificat pe "
-                "site, copiază valoarea header-ului Cookie din DevTools (F12 → Rețea → "
-                "un request la osu.ppy.sh). OSC încearcă mai întâi descărcarea oficială "
-                "(?noVideo=1), apoi mirror-urile. Gol = doar mirror."
+                "Cookie osu.ppy.sh (opțional). Nu deblochează descărcări nelimitate: "
+                "osu limitează contul, iar prea multe cereri pot aduce o restricție "
+                "temporară de download. OSC folosește contul doar pentru seturile pe "
+                "care mirror-urile nu le au, cu cel mult 3 hărți/minut și 170/oră, "
+                "câte una odată (aceleași limite ca Collection Manager). Copiază "
+                "valoarea header-ului Cookie din DevTools (F12 → Rețea), logat pe "
+                "osu.ppy.sh. Nu folosi set-cookie și nu trimite cookie-ul nimănui. "
+                "Gol = doar mirror-uri."
             ),
             font=T.FONT_SMALL,
             text_color=T.TEXT_MUTED,
@@ -132,8 +136,9 @@ class SettingsDialog(ctk.CTkToplevel):
         ctk.CTkLabel(
             self,
             text=(
-                "Sursă .osz: „Automat” testează mirror-urile cunoscute și le folosește "
-                "în ordinea celor care răspund; la eroare trece la următorul."
+                "Sursă .osz: „Automat” încearcă mirror-urile în ordine (hinai, Sayobot, "
+                "osu.direct, apoi restul). La 429/403 repetat sare peste host pentru "
+                "restul job-ului și trece la următorul."
             ),
             font=T.FONT_SMALL,
             text_color=T.TEXT_MUTED,

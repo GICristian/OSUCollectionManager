@@ -43,13 +43,18 @@ from osc_collector.mirror_net import (
 from osc_collector.download_maps import (
     AllMirrorsFailed,
     DEFAULT_PARALLEL_DOWNLOADS,
+    MirrorHostGuard,
     create_mirror_client,
     download_beatmapset_with_fallback,
     existing_valid_set_ids,
     thread_local_download_client,
     unique_beatmapset_ids_preserve_order,
 )
-from osc_collector.osu_site_download import normalize_osu_web_cookie
+from osc_collector.osu_site_download import (
+    OfficialDownloadGate,
+    OsuOfficialThrottler,
+    normalize_osu_web_cookie,
+)
 from osc_collector.lazer_realm_import import (
     import_collection as import_lazer_realm,
     realm_remove_beatmaps_from_collection,
@@ -88,17 +93,20 @@ def _mirror_job_log_line(
     *,
     osu_official_cookie: bool = False,
 ) -> str:
-    prefix = ""
+    account = ""
     if osu_official_cookie:
-        prefix = "Întâi osu.ppy.sh (cookie salvat), apoi "
+        account = (
+            "Cont osu: doar seturile fără mirror, max 3/min și 170/oră, "
+            "câte o descărcare. "
+        )
     if preset == "auto":
         return (
-            f"{prefix}mirror: automat — {chain_len} surse (ordonate după probă); "
+            f"{account}Mirror: automat — {chain_len} surse; "
             "la eșec trece la următoarea."
         )
     if preset == "custom":
-        return f"{prefix}mirror: URL personalizat (o sursă)."
-    return f"{prefix}mirror: {preset!r} (o sursă)."
+        return f"{account}Mirror: URL personalizat (o sursă)."
+    return f"{account}Mirror: {preset!r} (o sursă)."
 
 
 def _theme_hex(color: tuple[str, str] | str) -> str:
@@ -662,7 +670,11 @@ class OscApp(ctk.CTk):
         ).grid(row=0, column=0, sticky="w", padx=T.PAD, pady=(T.PAD, 4))
         ctk.CTkLabel(
             b3,
-            text="Rulează manual când ești gata. Fișierele merg în folderul de mai jos.",
+            text=(
+                "Rulează manual când ești gata. Fișierele merg în folderul de mai jos. "
+                "Hărțile vin de pe mirror-uri. Contul osu (Setări → cookie) e doar "
+                "rezervă, la 3 hărți/minut și 170/oră, ca să nu riști o restricție."
+            ),
             font=T.FONT_SMALL,
             text_color=T.TEXT_MUTED,
             wraplength=720,
@@ -1581,6 +1593,16 @@ class OscApp(ctk.CTk):
         self.log.insert("end", line + "\n")
         self.log.see("end")
 
+    def _log_official_stopped(self, reason: str) -> None:
+        """Un singur rând când osu.ppy.sh răspunde 401/403/429."""
+        self._enqueue_main(
+            lambda r=reason: self._log(
+                "Contul osu a fost oprit pentru restul acestei descărcări "
+                f"({r}). Continuăm pe mirror-uri. "
+                "Limita sigură rămâne 3 hărți/minut și 170/oră."
+            ),
+        )
+
     def _on_fetch(self) -> None:
         dbg("UI: _on_fetch")
         raw = self.url_entry.get().strip()
@@ -1903,6 +1925,9 @@ class OscApp(ctk.CTk):
             est_osz_bytes = 40 * 1024 * 1024
             existing_ids = existing_valid_set_ids(dest)
             osu_cookie = normalize_osu_web_cookie(self.settings.osu_web_cookie)
+            official_throttler = OsuOfficialThrottler() if osu_cookie else None
+            official_gate = OfficialDownloadGate() if osu_cookie else None
+            host_guard = MirrorHostGuard()
             parallel = min(DEFAULT_PARALLEL_DOWNLOADS, max(1, total))
             with create_mirror_client() as rank_client:
                 mirror_chain = mirror_templates_for_job(
@@ -2024,6 +2049,10 @@ class OscApp(ctk.CTk):
                         existing_valid_ids=existing_ids,
                         should_cancel=self._cancel.is_set,
                         official_osu_cookie=osu_cookie or None,
+                        official_throttler=official_throttler,
+                        official_gate=official_gate,
+                        host_guard=host_guard,
+                        on_official_stopped=self._log_official_stopped,
                     )
                     return ("ok" if out else "skip", sid, out, None)
                 except InterruptedError:

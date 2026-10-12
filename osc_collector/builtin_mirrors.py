@@ -6,16 +6,20 @@ import httpx
 
 from osc_collector.mirror_http import mirror_request_headers
 
-# Set vechi, mic, prezent pe majoritatea mirror-urilor (probabă reușită).
+# Set vechi, mic, prezent pe majoritatea mirror-urilor (probă reușită).
 PROBE_BEATMAPSET_ID = 75
 
 # (cheie_setări, etichetă UI scurtă, șablon URL cu {id})
-# Beatconnect: GET direct returnează .osz (ZIP); catboy/nerinyan pot da 403 sau HTML SPA.
+# Ordinea e „cel mai stabil primul”. Beatconnect răspunde 429 la rafală,
+# catboy dă 403 pe unele rețele, nerinyan.moe/d/ e pagină HTML, iar
+# api.chimu.moe nu se mai rezolvă în DNS.
 MIRROR_ENTRIES: tuple[tuple[str, str, str], ...] = (
+    ("hinai", "hinai", "https://mirror.hinamizawa.ai/api/v1/hinai/d/{id}"),
+    ("sayobot", "Sayobot", "https://dl.sayobot.cn/beatmaps/download/novideo/{id}"),
+    ("osudirect", "osu.direct", "https://osu.direct/d/{id}"),
+    ("lisek", "Lisek", "https://mirror.lisek.cc/d/{id}"),
     ("beatconnect", "Beatconnect", "https://beatconnect.io/b/{id}"),
     ("catboy", "catboy.best", "https://catboy.best/d/{id}"),
-    ("nerinyan", "Nerinyan", "https://nerinyan.moe/d/{id}"),
-    ("chimu", "Chimu", "https://api.chimu.moe/v1/download/{id}?n=1"),
 )
 
 BUILTIN_MIRROR_TEMPLATES_ORDERED: tuple[str, ...] = tuple(t for _, _, t in MIRROR_ENTRIES)
@@ -86,7 +90,7 @@ def mirror_templates_for_job(
     Lista ordonată de șabloane folosită la descărcare (încercare pe rând).
 
     * auto — proba toate, reușitele primele
-    * catboy / nerinyan / … — un singur mirror
+    * hinai / sayobot / beatconnect / … — un singur mirror
     * custom — doar șablonul din setări; dacă e gol, revine la auto
     """
     p = (preset or "auto").strip().lower()

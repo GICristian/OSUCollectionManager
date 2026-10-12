@@ -87,7 +87,7 @@ def test_osu_web_cookie_roundtrip(isolated_settings) -> None:
     assert loaded.osu_web_cookie == "osu_session=abc"
 
 
-def test_mirror_preset_roundtrip(isolated_settings) -> None:
+def test_removed_mirror_preset_falls_back_to_auto(isolated_settings) -> None:
     tmp_path, base = isolated_settings
     custom = AppSettings(
         client=base.client,
@@ -102,7 +102,25 @@ def test_mirror_preset_roundtrip(isolated_settings) -> None:
     )
     save_settings(custom)
     loaded = load_settings()
-    assert loaded.mirror_preset == "nerinyan"
+    assert loaded.mirror_preset == "auto"
+
+
+def test_mirror_preset_roundtrip(isolated_settings) -> None:
+    tmp_path, base = isolated_settings
+    custom = AppSettings(
+        client=base.client,
+        download_dir=base.download_dir,
+        realm_path=base.realm_path,
+        stable_collection_db=base.stable_collection_db,
+        osu_data_dir=base.osu_data_dir,
+        developer_mode=False,
+        diagnostic_verbose=False,
+        mirror_download_template=base.mirror_download_template,
+        mirror_preset="hinai",
+    )
+    save_settings(custom)
+    loaded = load_settings()
+    assert loaded.mirror_preset == "hinai"
 
 
 def test_load_missing_file_uses_defaults(isolated_settings) -> None:
